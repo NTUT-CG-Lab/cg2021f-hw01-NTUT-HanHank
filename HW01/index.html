@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>three.js webgl - loader - ttf</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<link type="text/css" rel="stylesheet" href="main.css">
+	</head>
+	<body>
+
+		<script src="./opentype.min.js"></script>
+		<script src="./three.min.js"></script>
+		<script src="./TTFLoader.js"></script>
+		<script src="scoreoutputer.min.js"></script>
+
+		<script>
+			let container;
+			let camera, cameraTarget, scene, renderer;
+			let group, textMesh1, textMesh2, textGeo, material;
+			let firstLetter = true;
+
+			
+			const height = 20,
+				size = 40,
+				hover = 30,
+				curveSegments = 4,
+				bevelThickness = 2,
+				bevelSize = 1.5;
+
+			let font = null;
+			const mirror = true;
+
+			let targetRotation = 0;
+			let targetRotationOnPointerDown = 0;
+
+			let pointerX = 0;
+			let pointerXOnPointerDown = 0;
+
+			let windowHalfX = window.innerWidth / 2;
+
+			init();
+			animate();
+			var so = new ScoreOutputer("107590018");
+				so.installCSS(function(){
+					// 安裝 bootstrap 的 css，如果在 html 上方引用 bootstrap 5.1.1 的話就不用使用 installCSS ，注意一定要 bootstrap css 5.1.1 版
+					// installCSS 接收一個 callback 當作參數，作為成功安裝 bootstrap css 的回呼函式
+				
+					//加入項目，分數，完成狀況
+					//第一個參數為 項目名稱
+					//第2個參數為 項目分數
+					//第3個參數為 完成狀況，有完成 true/未完成 false
+					//有幾個項目就呼叫幾個 addChild
+					//addChild 要比 renderModal 先呼叫
+					so.addChild("創建場景", 2, true);
+					so.addChild("讀取字形檔", 2, true);
+					so.addChild("將地支以圓圈排列", 2, true);
+					so.addChild("滑鼠點擊 12 地支分別跳轉網頁", 1, false);
+					so.addChild("高等計算機圖形作業", 1, false);
+					so.addChild("時鐘效果", 1, false);
+					so.addChild("任何 ply 格式模型", 1, false);
+			
+					//產生自評表，參數如下所示
+					so.renderModal(
+						//1. 自評表插入位置 (預設 document.body)
+						document.body,
+						//2. 自評表背景 (預設紅色)
+						'rgba(100,45,58,1)', 
+						//3. 自評表文字顏色 (預設白色)
+						'white', 
+						//4. 自評表文字大小 (預設 14pt)
+						'15pt', 
+						//5. 自評表 checkbox 文字大小 (預設多少忘了)
+						'15px', 
+						//6. 自評表標題 (預設 "自我評分表")
+						dialogTitle='自我評分表 (助教測試用)'
+					);
+					
+					//設定下載按鈕 <-- 一定要呼叫這個函數，不然沒有下載功能
+					so.installDownloadBtn();
+					
+					//產生 "開啟自評表按鈕"
+					so.renderBtn(
+						//自評表按鈕插入位置
+						document.body,
+						//自評表按鈕文字
+						"開啟自評表"
+					);
+				});
+			function init() {
+
+				container = document.createElement( 'div' );
+				document.body.appendChild( container );
+
+				// CAMERA
+
+				camera = new THREE.PerspectiveCamera( 60, window.innerWidth / window.innerHeight, 1, 1500 );
+				camera.position.set( 0, 400, 700 );
+
+				cameraTarget = new THREE.Vector3( 0, 150, 0 );
+
+				// SCENE
+
+				scene = new THREE.Scene();
+				scene.background = new THREE.Color( 0x000000 );
+				scene.fog = new THREE.Fog( 0x000000, 250, 1400 );
+
+				// LIGHTS
+
+				const dirLight = new THREE.DirectionalLight( 0xffffff, 0.125 );
+				dirLight.position.set( 0, 0, 1 ).normalize();
+				scene.add( dirLight );
+
+				const pointLight = new THREE.PointLight( 0xffffff, 1.5 );
+				pointLight.position.set( 0, 100, 90 );
+				pointLight.color.setHSL( Math.random(), 1, 0.5 );
+				scene.add( pointLight );
+
+				material = new THREE.MeshPhongMaterial( { color: 0xffffff, flatShading: true } );
+
+				group = new THREE.Group();
+				group.position.y = 100;
+
+				scene.add( group );
+
+				const loader = new THREE.TTFLoader();
+				
+				loader.load( 'fonts/MoeLI.ttf', function ( json ) {
+				console.log(json)
+					font = new THREE.Font( json );
+					
+					createText();
+					createCircle();
+	
+				} );
+
+				const plane = new THREE.Mesh(
+					new THREE.PlaneGeometry( 800, 600 ),
+					new THREE.MeshBasicMaterial( { color: 0xffffff, opacity: 0.5, transparent: false } )
+				);
+				plane.position.y = -200;
+				plane.rotation.x = - Math.PI / 2;
+				group.add( plane );
+
+
+				// RENDERER
+
+				renderer = new THREE.WebGLRenderer( { antialias: true } );
+				renderer.setPixelRatio( window.devicePixelRatio );
+				renderer.setSize( window.innerWidth, window.innerHeight );
+				container.appendChild( renderer.domElement );
+
+				// EVENTS
+
+				container.style.touchAction = 'none';
+				container.addEventListener( 'pointerdown', onPointerDown );
+
+				document.addEventListener( 'keypress', onDocumentKeyPress );
+				document.addEventListener( 'keydown', onDocumentKeyDown );
+
+				window.addEventListener( 'resize', onWindowResize );
+
+			}
+
+			function onWindowResize() {
+
+				windowHalfX = window.innerWidth / 2;
+
+				camera.aspect = window.innerWidth / window.innerHeight;
+				camera.updateProjectionMatrix();
+
+				renderer.setSize( window.innerWidth, window.innerHeight );
+
+			}
+
+			function onDocumentKeyDown( event ) {
+
+				if ( firstLetter ) {
+
+					firstLetter = false;
+					text = '';
+
+				}
+
+				const keyCode = event.keyCode;
+
+				// backspace
+
+				if ( keyCode === 8 ) {
+
+					event.preventDefault();
+
+					text = text.substring( 0, text.length - 1 );
+					refreshText();
+
+					return false;
+
+				}
+
+			}
+
+			function onDocumentKeyPress( event ) {
+
+				const keyCode = event.which;
+
+				// backspace
+
+				if ( keyCode === 8 ) {
+
+					event.preventDefault();
+
+				} else {
+
+					const ch = String.fromCharCode( keyCode );
+					text += ch;
+
+					refreshText();
+
+				}
+
+			}
+
+			function createText() {
+
+				textGeo1 = new THREE.TextGeometry( "子", {
+
+					font: font,
+
+					size: size,
+					height: height,
+					curveSegments: curveSegments,
+
+					bevelThickness: bevelThickness,
+					bevelSize: bevelSize,
+					bevelEnabled: true
+
+				} );
+				textGeo2 = new THREE.TextGeometry( "丑", {
+
+					font: font,
+
+					size: size,
+					height: height,
+					curveSegments: curveSegments,
+
+					bevelThickness: bevelThickness,
+					bevelSize: bevelSize,
+					bevelEnabled: true
+
+				} );
+				textGeo3 = new THREE.TextGeometry( "寅", {
+
+					font: font,
+
+					size: size,
+					height: height,
+					curveSegments: curveSegments,
+
+					bevelThickness: bevelThickness,
+					bevelSize: bevelSize,
+					bevelEnabled: true
+
+				} );
+				textGeo4 = new THREE.TextGeometry( "卯", {
+
+					font: font,
+
+					size: size,
+					height: height,
+					curveSegments: curveSegments,
+
+					bevelThickness: bevelThickness,
+					bevelSize: bevelSize,
+					bevelEnabled: true
+
+				} );
+				textGeo5 = new THREE.TextGeometry( "辰", {
+
+					font: font,
+
+					size: size,
+					height: height,
+					curveSegments: curveSegments,
+
+					bevelThickness: bevelThickness,
+					bevelSize: bevelSize,
+					bevelEnabled: true
+
+				} );
+				textGeo6 = new THREE.TextGeometry( "巳", {
+
+					font: font,
+
+					size: size,
+					height: height,
+					curveSegments: curveSegments,
+
+					bevelThickness: bevelThickness,
+					bevelSize: bevelSize,
+					bevelEnabled: true
+
+				} );
+				textGeo7 = new THREE.TextGeometry( "午", {
+
+					font: font,
+
+					size: size,
+					height: height,
+					curveSegments: curveSegments,
+
+					bevelThickness: bevelThickness,
+					bevelSize: bevelSize,
+					bevelEnabled: true
+
+				} );
+				textGeo8 = new THREE.TextGeometry( "未", {
+
+				font: font,
+
+				size: size,
+				height: height,
+				curveSegments: curveSegments,
+
+				bevelThickness: bevelThickness,
+				bevelSize: bevelSize,
+				bevelEnabled: true
+
+				} );
+				textGeo9 = new THREE.TextGeometry( "申", {
+
+				font: font,
+
+				size: size,
+				height: height,
+				curveSegments: curveSegments,
+
+				bevelThickness: bevelThickness,
+				bevelSize: bevelSize,
+				bevelEnabled: true
+
+				} );
+				textGeo10 = new THREE.TextGeometry( "酉", {
+
+				font: font,
+
+				size: size,
+				height: height,
+				curveSegments: curveSegments,
+
+				bevelThickness: bevelThickness,
+				bevelSize: bevelSize,
+				bevelEnabled: true
+
+				} );
+				textGeo11 = new THREE.TextGeometry( "戌", {
+
+				font: font,
+
+				size: size,
+				height: height,
+				curveSegments: curveSegments,
+
+				bevelThickness: bevelThickness,
+				bevelSize: bevelSize,
+				bevelEnabled: true
+
+				} );
+				textGeo12 = new THREE.TextGeometry( "亥", {
+
+				font: font,
+
+				size: size,
+				height: height,
+				curveSegments: curveSegments,
+
+				bevelThickness: bevelThickness,
+				bevelSize: bevelSize,
+				bevelEnabled: true
+
+				} );
+				textGeo13 = new THREE.TextGeometry("高等計算機圖學",{
+				font: font,
+
+				size: 50,
+				height: height,
+				curveSegments: curveSegments,
+
+				bevelThickness: bevelThickness,
+				bevelSize: bevelSize,
+				bevelEnabled: true
+
+				})
+
+				textMesh1 = new THREE.Mesh( textGeo1, material );
+				textMesh2 = new THREE.Mesh( textGeo2, material );
+				textMesh3 = new THREE.Mesh( textGeo3, material );
+				textMesh4 = new THREE.Mesh( textGeo4, material );
+				textMesh5 = new THREE.Mesh( textGeo5, material );
+				textMesh6 = new THREE.Mesh( textGeo6, material );
+				textMesh7 = new THREE.Mesh( textGeo7, material );
+				textMesh8 = new THREE.Mesh( textGeo8, material );
+				textMesh9 = new THREE.Mesh( textGeo9, material );
+				textMesh10 = new THREE.Mesh( textGeo10, material );
+				textMesh11 = new THREE.Mesh( textGeo11, material );
+				textMesh12 = new THREE.Mesh( textGeo12, material );
+				textMesh13 = new THREE.Mesh(textGeo13, material);
+				
+				
+
+				textMesh1.position.x = 0;
+				textMesh1.position.y = 150;
+				textMesh1.position.z = 0;
+
+				textMesh2.position.x = 50;
+				textMesh2.position.y = 100;
+				textMesh2.position.z = 0;
+
+				textMesh3.position.x = 100;
+				textMesh3.position.y = 50;
+				textMesh3.position.z = 0;
+
+				textMesh4.position.x = 100;
+				textMesh4.position.y = -25;
+				textMesh4.position.z = 0;
+
+				textMesh5.position.x = 50;
+				textMesh5.position.y = -75;
+				textMesh5.position.z = 0;
+
+				textMesh6.position.x = 0;
+				textMesh6.position.y = -125;
+				textMesh6.position.z = 0;
+
+				textMesh7.position.x = -75;
+				textMesh7.position.y = -125;
+				textMesh7.position.z = 0;
+
+				textMesh8.position.x = -125;
+				textMesh8.position.y = -75;
+				textMesh8.position.z = 0;
+
+				textMesh9.position.x = -175;
+				textMesh9.position.y = -25;
+				textMesh9.position.z = 0;
+
+				textMesh10.position.x = -175;
+				textMesh10.position.y = 50;
+				textMesh10.position.z = 0;
+
+				textMesh11.position.x = -125;
+				textMesh11.position.y = 100;
+				textMesh11.position.z = 0;
+
+				textMesh12.position.x = -75;
+				textMesh12.position.y = 150;
+				textMesh12.position.z = 0;
+
+				textMesh13.position.x = -250;
+				textMesh13.position.y = -200;
+				textMesh13.position.z = 200;
+
+				textMesh1.rotation.x = 0;
+				textMesh1.rotation.y = Math.PI * 2;
+
+				group.add( textMesh1 );
+				group.add( textMesh2 );
+				group.add( textMesh3 );
+				group.add( textMesh4 );
+				group.add( textMesh5 );
+				group.add( textMesh6 );
+				group.add( textMesh7 );
+				group.add( textMesh8 );
+				group.add( textMesh9 );
+				group.add( textMesh10 );
+				group.add( textMesh11 );
+				group.add( textMesh12 );
+				group.add(textMesh13);
+
+			}
+
+			function onPointerDown( event ) {
+
+				if ( event.isPrimary === false ) return;
+
+				pointerXOnPointerDown = event.clientX - windowHalfX;
+				targetRotationOnPointerDown = targetRotation;
+
+				document.addEventListener( 'pointermove', onPointerMove );
+				document.addEventListener( 'pointerup', onPointerUp );
+
+			}
+
+			function onPointerMove( event ) {
+
+				if ( event.isPrimary === false ) return;
+
+				pointerX = event.clientX - windowHalfX;
+
+				targetRotation = targetRotationOnPointerDown + ( pointerX - pointerXOnPointerDown ) * 0.02;
+
+			}
+
+			function onPointerUp() {
+
+				if ( event.isPrimary === false ) return;
+
+				document.removeEventListener( 'pointermove', onPointerMove );
+				document.removeEventListener( 'pointerup', onPointerUp );
+
+			}
+
+			//
+
+			function animate() {
+
+				requestAnimationFrame( animate );
+
+				group.rotation.y += ( targetRotation - group.rotation.y ) * 0.05;
+
+				camera.lookAt( cameraTarget );
+
+				renderer.render( scene, camera );
+
+			}
+
+			function createCircle(){
+				const geometry = new THREE.CircleGeometry( 175, 100 );
+				const material = new THREE.MeshBasicMaterial( { color: 0x4dffff } );
+				
+				const circle = new THREE.Mesh( geometry, material );
+				circle.position.x = -10;
+				circle.position.y = 20;
+				
+				group.add( circle );
+			}
+			
+			
+			
+			</script>
+
+
+			
+	</body>
+</html>
